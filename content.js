@@ -3,11 +3,13 @@ const CREDENTIALS = [
     label: "Lease account",
     username: "test3@mail.com",
     password: "Password@123",
+    tag: "Prod",
   },
   {
     label: "Supplier account",
     username: "test@mail.com",
     password: "12345678",
+    tag: "Dev",
   },
 ];
 function triggerReactInput(element, value) {
