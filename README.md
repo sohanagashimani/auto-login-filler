@@ -1,55 +1,33 @@
-# Auto Login Filler (Chrome Extension)
+## Auto Login Filler (Chrome Extension)
 
-Tiny helper to auto-fill login credentials on selected sites with a fast command palette.
+Fast command palette to auto-fill login credentials.
 
-## Features
+### Quick start
 
-- Command palette (Ctrl+Shift+L by default)
-- Search/filter by label or email; keyboard-first navigation
-- 1–9 quick select, Enter to fill & submit, Esc to close
+- **Press Ctrl+Shift+L** to open the palette on any matched site.
 
-## Install (Load Unpacked)
+### Features
 
-1. Clone or download this repo.
-2. In Chrome, open `chrome://extensions`.
-3. Enable Developer mode (top-right).
-4. Click Load unpacked and select this project folder.
+- **Command palette**: Fast, searchable list of saved accounts.
+- **Keyboard-first**: ↑/↓ navigate, 1–9 quick select, Enter fill & submit, Esc close, 0 reuse last, Shift+Enter fill only, Alt+Enter copy password.
+- **Tag filtering**: Filter accounts by tags with chip controls.
+- **Remembers last used**: Quickly reuse with key 0.
+- **Local-only**: Data lives inside the extension (no network).
 
-## Usage
+### Install (Load unpacked)
 
-1. Go to a matched site (see `manifest.json` → `content_scripts.matches`).
-2. Press `Ctrl+Shift+L` to open/close the palette.
-3. Type to search; use ↑/↓ or 1–9; press Enter to fill & submit.
+1. Open `chrome://extensions` in Chrome.
+2. Enable Developer mode.
+3. Click “Load unpacked” and select this folder.
 
-Tip: Change the shortcut at `chrome://extensions/shortcuts`.
+### Use
 
-## Editing Credentials
+- Go to a matched site (see `manifest.json` → `content_scripts.matches`).
+- Press `Ctrl+Shift+L` to open/close the palette.
+- Type to search; use ↑/↓ or 1–9; press Enter to fill & submit.
 
-Edit the `CREDENTIALS` array in `content.js`.
+Tip: If the hotkey doesn’t fire, set it at `chrome://extensions/shortcuts`.
 
-```js
-const CREDENTIALS = [
-  { label: "Lease account", username: "user@example.com", password: "hunter2" },
-  {
-    label: "Admin account",
-    username: "admin@example.com",
-    password: "secret",
-    isAdminSite: true,
-  },
-];
-```
+### Configure
 
-- label: Optional display name in the palette
-- username: Email/username to fill
-- password: Password to fill
-- isAdminSite: Set to true if the target page uses the admin form (alternate selectors)
-
-## Customize
-
-- Sites: Edit `manifest.json` → `content_scripts.matches`.
-- Hotkey: Update in `manifest.json` (`commands.open-login-palette.suggested_key`) or via `chrome://extensions/shortcuts`.
-
-## Notes
-
-- Credentials are stored locally in this extension only.
-- Supports more than 9 accounts; use search and arrows to navigate.
+- Edit `CREDENTIALS` in `content.js` to add/update your accounts.
