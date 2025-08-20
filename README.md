@@ -11,6 +11,7 @@ Fast command palette to auto-fill login credentials.
 - **Command palette**: Fast, searchable list of saved accounts.
 - **Keyboard-first**: ↑/↓ navigate, 1–9 quick select, Enter fill & submit, Esc close, 0 reuse last, Shift+Enter fill only, Alt+Enter copy password.
 - **Tag filtering**: Filter accounts by tags with chip controls.
+- **Default tag filter**: Start filtered by a preselected tag; remembers your last selection.
 - **Remembers last used**: Quickly reuse with key 0.
 - **Local-only**: Data lives inside the extension (no network).
 
@@ -31,3 +32,4 @@ Tip: If the hotkey doesn’t fire, set it at `chrome://extensions/shortcuts`.
 ### Configure
 
 - Edit `CREDENTIALS` in `content.js` to add/update your accounts.
+- Default tag: Set `DEFAULT_TAG` in `content.js` to a tag present in your credentials (or `null` for All). The palette opens with that tag and will remember whatever tag you pick next.

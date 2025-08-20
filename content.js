@@ -12,6 +12,11 @@ const CREDENTIALS = [
     tag: "Dev",
   },
 ];
+
+// Set the default tag filter applied when the palette opens.
+// Example: const DEFAULT_TAG = "Prod"; Set to null for no default (All).
+const DEFAULT_TAG = null;
+
 function triggerReactInput(element, value) {
   const lastValue = element.value;
   element.value = value;
@@ -100,11 +105,10 @@ function openPalette() {
     paletteState.searchInput.value = "";
   }
   paletteState.filteredIndices = CREDENTIALS.map((_, i) => i);
-  // Load last-used info, then render
+  // Load persisted prefs (last used, preferred tag), then render with filters
   loadPersistentState(() => {
     renderTagsBar();
-    renderPaletteItems();
-    highlightActiveItem();
+    applyFilters();
   });
   paletteState.container.style.display = "flex";
   document.addEventListener("keydown", onPaletteKeydown, true);
@@ -549,11 +553,24 @@ function maskPassword(password) {
 // ---------- Tags & Persistence ----------
 function loadPersistentState(cb) {
   try {
-    chrome.storage?.local.get(["lastUsedUsername"], data => {
-      paletteState.lastUsedUsername = data.lastUsedUsername || null;
-      if (typeof cb === "function") cb();
-    });
+    chrome.storage?.local.get(
+      ["lastUsedUsername", "preferredTagFilter"],
+      data => {
+        paletteState.lastUsedUsername = data.lastUsedUsername || null;
+        // Determine preferred tag: stored value or DEFAULT_TAG, only if available
+        const tagSet = new Set();
+        CREDENTIALS.forEach(c => {
+          if (c.tag) tagSet.add(c.tag);
+        });
+        let preferred = data.preferredTagFilter ?? DEFAULT_TAG;
+        if (preferred && !tagSet.has(preferred)) preferred = null;
+        paletteState.activeTagFilter = preferred || null;
+        if (typeof cb === "function") cb();
+      }
+    );
   } catch (_) {
+    // Fallback to DEFAULT_TAG on any error
+    paletteState.activeTagFilter = DEFAULT_TAG || null;
     if (typeof cb === "function") cb();
   }
 }
@@ -562,6 +579,7 @@ function savePersistentState() {
   try {
     chrome.storage?.local.set({
       lastUsedUsername: paletteState.lastUsedUsername,
+      preferredTagFilter: paletteState.activeTagFilter || null,
     });
   } catch (_) {}
 }
@@ -582,6 +600,7 @@ function renderTagsBar() {
     paletteState.activeTagFilter = null;
     renderTagsBar();
     applyFilters();
+    savePersistentState();
   });
   el.appendChild(all);
 
@@ -591,6 +610,7 @@ function renderTagsBar() {
         paletteState.activeTagFilter === t ? null : t;
       renderTagsBar();
       applyFilters();
+      savePersistentState();
     });
     el.appendChild(chip);
   });
