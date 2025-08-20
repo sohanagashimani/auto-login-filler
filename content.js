@@ -1,13 +1,34 @@
 const CREDENTIALS = [
   {
     label: "Lease account",
-    username: "test3@mail.com",
+    username: "jon.snow@digitalinnk.com",
     password: "Password@123",
+    tag: "Prod",
   },
   {
     label: "Supplier account",
-    username: "test@mail.com",
+    username: "Elyse.McCullough.5169@digitalinnk.com",
     password: "12345678",
+    tag: "Supplier",
+  },
+  {
+    label: "Admin account",
+    username: "di.admin@gmail.com",
+    password: "12345678",
+    isAdminSite: true,
+    tag: "Admin",
+  },
+  {
+    label: "Exceledge admin",
+    username: "superadmin@exceledge.com",
+    password: "cu65vkfffy",
+    tag: "Admin",
+  },
+  {
+    label: "Exceledge school admin",
+    username: "jon@snow.com",
+    password: "Password@123",
+    tag: "School",
   },
 ];
 
@@ -35,6 +56,9 @@ let paletteState = {
   activeIndex: 0,
   searchInput: null,
   filteredIndices: [],
+  tagsBarEl: null,
+  activeTagFilter: null,
+  lastUsedUsername: null,
 };
 
 chrome.runtime.onMessage.addListener(function (request) {
@@ -96,8 +120,12 @@ function openPalette() {
     paletteState.searchInput.value = "";
   }
   paletteState.filteredIndices = CREDENTIALS.map((_, i) => i);
-  renderPaletteItems();
-  highlightActiveItem();
+  // Load last-used info, then render
+  loadPersistentState(() => {
+    renderTagsBar();
+    renderPaletteItems();
+    highlightActiveItem();
+  });
   paletteState.container.style.display = "flex";
   document.addEventListener("keydown", onPaletteKeydown, true);
   // Focus search box for immediate typing
@@ -138,6 +166,8 @@ function ensurePaletteElements() {
   panel.style.borderRadius = "8px";
   panel.style.boxShadow = "0 10px 30px rgba(0,0,0,0.4)";
   panel.style.overflow = "hidden";
+  panel.style.display = "flex";
+  panel.style.flexDirection = "column";
   panel.style.fontFamily =
     'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"';
 
@@ -148,6 +178,14 @@ function ensurePaletteElements() {
   header.style.letterSpacing = "0.2px";
   header.style.background = "#111827";
   header.style.borderBottom = "1px solid #374151";
+
+  const tagsBar = document.createElement("div");
+  tagsBar.style.display = "flex";
+  tagsBar.style.flexWrap = "wrap";
+  tagsBar.style.gap = "6px";
+  tagsBar.style.padding = "8px 12px";
+  tagsBar.style.background = "#0f172a";
+  tagsBar.style.borderBottom = "1px solid #374151";
 
   const searchWrap = document.createElement("div");
   searchWrap.style.padding = "8px 12px";
@@ -171,18 +209,18 @@ function ensurePaletteElements() {
   searchInput.style.outline = "none";
 
   searchInput.addEventListener("input", () => {
-    const q = searchInput.value.trim().toLowerCase();
-    if (!q) {
-      paletteState.filteredIndices = CREDENTIALS.map((_, i) => i);
-    } else {
-      paletteState.filteredIndices = CREDENTIALS.map((cred, i) => ({ cred, i }))
-        .filter(({ cred }) => {
-          const label = String(cred.label || "").toLowerCase();
-          const user = String(cred.username || "").toLowerCase();
-          return label.includes(q) || user.includes(q);
-        })
-        .map(({ i }) => i);
-    }
+    const q = searchInput.value.trim();
+    const tagFilter = paletteState.activeTagFilter;
+    const matches = cred =>
+      fuzzyMatch(cred.label || "", q) ||
+      fuzzyMatch(cred.username || "", q) ||
+      fuzzyMatch(cred.tag || "", q);
+    const withTag = idx =>
+      !tagFilter || (CREDENTIALS[idx].tag || "") === tagFilter;
+    const indices = CREDENTIALS.map((_, i) => i).filter(
+      i => (!q || matches(CREDENTIALS[i])) && withTag(i)
+    );
+    paletteState.filteredIndices = indices;
     paletteState.activeIndex = 0;
     renderPaletteItems();
     highlightActiveItem();
@@ -194,20 +232,77 @@ function ensurePaletteElements() {
   list.style.listStyle = "none";
   list.style.margin = "0";
   list.style.padding = "6px 0";
-  list.style.maxHeight = "calc(70vh - 48px - 44px - 36px)";
+  list.style.flex = "1 1 auto";
   list.style.overflowY = "auto";
 
   // Defer actual item creation to renderPaletteItems()
 
   const footer = document.createElement("div");
-  footer.textContent =
-    "Ctrl+Shift+L: toggle • ↑/↓: navigate • 1–9: quick select • Enter: fill & submit • Esc: close";
+  footer.style.display = "flex";
+  footer.style.flexWrap = "wrap";
+  footer.style.gap = "8px 12px";
+  footer.style.alignItems = "center";
   footer.style.padding = "8px 12px";
   footer.style.fontSize = "12px";
   footer.style.color = "#9ca3af";
   footer.style.borderTop = "1px solid #374151";
 
+  // Render keyboard shortcuts as compact chips
+  const shortcuts = [
+    // { keys: ["Ctrl", "Shift", "L"], label: "Toggle" },
+    { keys: ["↑", "↓"], label: "Navigate" },
+    { keys: ["1–9"], label: "Quick select" },
+    { keys: ["0"], label: "Reuse last" },
+    { keys: ["Enter"], label: "Fill & submit" },
+    { keys: ["Shift", "Enter"], label: "Fill only" },
+    { keys: ["Alt", "Enter"], label: "Copy password" },
+    { keys: ["Esc"], label: "Close" },
+  ];
+
+  const createKeyChip = text => {
+    const chip = document.createElement("span");
+    chip.textContent = text;
+    chip.style.display = "inline-flex";
+    chip.style.alignItems = "center";
+    chip.style.justifyContent = "center";
+    chip.style.padding = "2px 6px";
+    chip.style.border = "1px solid #374151";
+    chip.style.borderRadius = "4px";
+    chip.style.background = "#0b1220";
+    chip.style.color = "#cbd5e1";
+    chip.style.fontSize = "11px";
+    chip.style.lineHeight = "1";
+    chip.style.minWidth = "20px";
+    return chip;
+  };
+
+  shortcuts.forEach(s => {
+    const group = document.createElement("div");
+    group.style.display = "flex";
+    group.style.alignItems = "center";
+    group.style.gap = "6px";
+
+    s.keys.forEach((k, i) => {
+      if (i > 0) {
+        const plus = document.createElement("span");
+        plus.textContent = "+";
+        plus.style.opacity = "0.6";
+        group.appendChild(plus);
+      }
+      group.appendChild(createKeyChip(k));
+    });
+
+    const desc = document.createElement("span");
+    desc.textContent = s.label;
+    desc.style.color = "#9ca3af";
+    desc.style.fontSize = "12px";
+    group.appendChild(desc);
+
+    footer.appendChild(group);
+  });
+
   panel.appendChild(header);
+  panel.appendChild(tagsBar);
   panel.appendChild(searchWrap);
   panel.appendChild(list);
   panel.appendChild(footer);
@@ -215,6 +310,7 @@ function ensurePaletteElements() {
   document.documentElement.appendChild(container);
 
   paletteState.container = container;
+  paletteState.tagsBarEl = tagsBar;
   paletteState.searchInput = searchInput;
   paletteState.listEl = list;
   paletteState.items = Array.from(list.children);
@@ -265,6 +361,7 @@ function renderPaletteItems() {
     textWrap.style.gap = "2px";
 
     const primary = document.createElement("div");
+    const tags = cred.tag ? [cred.tag] : [];
     primary.textContent = cred.label || cred.username;
     primary.style.fontSize = "14px";
     primary.style.lineHeight = "20px";
@@ -274,8 +371,24 @@ function renderPaletteItems() {
     secondary.style.fontSize = "12px";
     secondary.style.color = "#9ca3af";
 
+    const tagsRow = document.createElement("div");
+    tagsRow.style.display = "flex";
+    tagsRow.style.flexWrap = "wrap";
+    tagsRow.style.gap = "6px";
+    tags.forEach(t => {
+      const chip = document.createElement("span");
+      chip.textContent = t;
+      chip.style.fontSize = "11px";
+      chip.style.color = "#cbd5e1";
+      chip.style.background = "#334155";
+      chip.style.padding = "2px 6px";
+      chip.style.borderRadius = "9999px";
+      tagsRow.appendChild(chip);
+    });
+
     textWrap.appendChild(primary);
     textWrap.appendChild(secondary);
+    if (tags.length) textWrap.appendChild(tagsRow);
     item.appendChild(badge);
     item.appendChild(textWrap);
 
@@ -333,9 +446,16 @@ function onPaletteKeydown(e) {
     highlightActiveItem();
     return;
   }
+  // Tag chips navigation with Ctrl+ArrowLeft/Right
+  if (e.ctrlKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    e.preventDefault();
+    focusNextTagChip(e.key === "ArrowRight");
+    return;
+  }
   if (e.key === "Enter") {
     e.preventDefault();
-    chooseActive();
+    const submit = !e.shiftKey; // Enter fills & submits; Shift+Enter fills only
+    chooseActive({ submit, copyOnly: e.altKey });
     return;
   }
   // Digit quick select 1..9 (based on visual index)
@@ -344,13 +464,20 @@ function onPaletteKeydown(e) {
     const index = parseInt(e.key, 10) - 1;
     if (index >= 0 && index <= maxIndex) {
       paletteState.activeIndex = index;
-      chooseActive();
+      chooseActive({ submit: true, copyOnly: false });
     }
+    return;
+  }
+  // 0 -> reuse last account
+  if (e.key === "0") {
+    e.preventDefault();
+    reuseLastAccount();
     return;
   }
 }
 
-function chooseActive() {
+function chooseActive(options) {
+  const opts = Object.assign({ submit: true, copyOnly: false }, options || {});
   // Map visual activeIndex to underlying credential using filteredIndices
   const indices =
     paletteState.filteredIndices && paletteState.filteredIndices.length
@@ -360,7 +487,64 @@ function chooseActive() {
   const cred = CREDENTIALS[credIndex];
   if (!cred) return;
   closePalette();
+  if (opts.copyOnly) {
+    copyToClipboard(cred.password);
+  } else {
+    if (opts.submit) {
+      fillAndLogin(cred.username, cred.password, !!cred.isAdminSite);
+    } else {
+      fillOnly(cred.username, cred.password, !!cred.isAdminSite);
+    }
+  }
+  paletteState.lastUsedUsername = cred.username;
+  savePersistentState();
+}
+
+function fillOnly(username, password, isAdminSite) {
+  let usernameInput;
+  let passwordInput;
+  if (isAdminSite) {
+    usernameInput = document.querySelector('input[name="userName"]');
+    passwordInput = document.querySelector(
+      'input[name="password"], input[data-cy="password"]'
+    );
+  } else {
+    usernameInput = document.querySelector(
+      'input[name="email"], input[data-cy="email"]'
+    );
+    passwordInput = document.querySelector(
+      'input[name="password"], input[data-cy="password"]'
+    );
+  }
+  if (usernameInput && passwordInput) {
+    triggerReactInput(usernameInput, username);
+    triggerReactInput(passwordInput, password);
+  }
+}
+
+function reuseLastAccount() {
+  const last = paletteState.lastUsedUsername;
+  if (!last) return;
+  const cred = CREDENTIALS.find(c => c.username === last);
+  if (!cred) return;
+  closePalette();
   fillAndLogin(cred.username, cred.password, !!cred.isAdminSite);
+}
+
+function copyToClipboard(text) {
+  try {
+    navigator.clipboard.writeText(text);
+  } catch (_) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+  }
 }
 
 function maskEmail(email) {
@@ -380,4 +564,115 @@ function maskPassword(password) {
   const tail = password.slice(-1);
   const hiddenLength = password.length - visible - 1;
   return head + "*".repeat(hiddenLength) + tail;
+}
+
+// ---------- Tags & Persistence ----------
+function loadPersistentState(cb) {
+  try {
+    chrome.storage?.local.get(["lastUsedUsername"], data => {
+      paletteState.lastUsedUsername = data.lastUsedUsername || null;
+      if (typeof cb === "function") cb();
+    });
+  } catch (_) {
+    if (typeof cb === "function") cb();
+  }
+}
+
+function savePersistentState() {
+  try {
+    chrome.storage?.local.set({
+      lastUsedUsername: paletteState.lastUsedUsername,
+    });
+  } catch (_) {}
+}
+
+function renderTagsBar() {
+  if (!paletteState.tagsBarEl) return;
+  const el = paletteState.tagsBarEl;
+  el.innerHTML = "";
+  // Collect unique tags from known mappings
+  const tagSet = new Set();
+  CREDENTIALS.forEach(c => {
+    if (c.tag) tagSet.add(c.tag);
+  });
+  const tags = Array.from(tagSet).sort();
+
+  // 'All' chip
+  const all = createTagChip("All", !paletteState.activeTagFilter, () => {
+    paletteState.activeTagFilter = null;
+    renderTagsBar();
+    applyFilters();
+  });
+  el.appendChild(all);
+
+  tags.forEach(t => {
+    const chip = createTagChip(t, paletteState.activeTagFilter === t, () => {
+      paletteState.activeTagFilter =
+        paletteState.activeTagFilter === t ? null : t;
+      renderTagsBar();
+      applyFilters();
+    });
+    el.appendChild(chip);
+  });
+
+  // No manual editing; keep bar static from CREDENTIALS
+}
+
+function createTagChip(text, active, onClick) {
+  const btn = document.createElement("button");
+  btn.textContent = text;
+  btn.style.fontSize = "12px";
+  btn.style.padding = "4px 8px";
+  btn.style.borderRadius = "9999px";
+  btn.style.border = active ? "1px solid #60a5fa" : "1px solid #334155";
+  btn.style.background = active ? "#1e3a8a" : "#0b1220";
+  btn.style.color = active ? "#e5e7eb" : "#cbd5e1";
+  btn.addEventListener("click", onClick);
+  return btn;
+}
+
+function applyFilters() {
+  const q = (paletteState.searchInput?.value || "").trim();
+  const tagFilter = paletteState.activeTagFilter;
+  const matches = cred =>
+    fuzzyMatch(cred.label || "", q) ||
+    fuzzyMatch(cred.username || "", q) ||
+    fuzzyMatch(cred.tag || "", q);
+  const withTag = idx =>
+    !tagFilter || (CREDENTIALS[idx].tag || "") === tagFilter;
+  const indices = CREDENTIALS.map((_, i) => i).filter(
+    i => (!q || matches(CREDENTIALS[i])) && withTag(i)
+  );
+  paletteState.filteredIndices = indices;
+  paletteState.activeIndex = 0;
+  renderPaletteItems();
+  highlightActiveItem();
+}
+
+// No prompt editing any more
+
+function focusNextTagChip(forward) {
+  const chips = Array.from(
+    paletteState.tagsBarEl?.querySelectorAll("button") || []
+  );
+  if (!chips.length) return;
+  const active = document.activeElement;
+  let idx = chips.indexOf(active);
+  if (idx === -1) idx = forward ? -1 : 0;
+  const nextIdx = (idx + (forward ? 1 : -1) + chips.length) % chips.length;
+  chips[nextIdx].focus();
+}
+
+// ---------- Fuzzy matching ----------
+function fuzzyMatch(text, query) {
+  const q = String(query || "").toLowerCase();
+  if (!q) return true;
+  const s = String(text || "").toLowerCase();
+  let i = 0;
+  for (let c of q) {
+    i = s.indexOf(c, i);
+    if (i === -1) return false;
+    i += 1;
+  }
+  return true;
 }
