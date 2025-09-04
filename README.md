@@ -1,6 +1,8 @@
 ## Auto Login Filler (Chrome Extension)
 
 Fast command palette to auto-fill login credentials.
+<img width="723" height="683" alt="image" src="https://github.com/user-attachments/assets/32b837e9-8485-4a2a-b4db-472e4223300f" />
+
 
 ### Quick start
 
